@@ -81,6 +81,7 @@ class SupportScreen(private val activity: AppCompatActivity) {
             addView(label(str(R.string.support_title), true)); addView(label(str(R.string.support_subtitle)))
         }
         val contact = card(root, R.string.support_contact)
+        if (BuildConfig.SUPPORT_NAME.isNotBlank()) contact.addView(label(activity.getString(R.string.support_name, BuildConfig.SUPPORT_NAME)))
         val handle = BuildConfig.SUPPORT_TELEGRAM.removePrefix("https://t.me/").removePrefix("@")
         val telegramValid = Regex("[A-Za-z][A-Za-z0-9_]{4,31}").matches(handle)
         val phone = BuildConfig.SUPPORT_PHONE

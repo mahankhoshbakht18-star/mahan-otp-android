@@ -34,11 +34,12 @@ android {
         versionCode = 4
         versionName = "2.1.0"
 
-        fun publicValue(name: String) = "\"" + (System.getenv(name) ?: "")
+        fun publicValue(name: String, fallback: String = "") = "\"" + (System.getenv(name) ?: fallback)
             .replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", " ").replace("\r", " ") + "\""
-        buildConfigField("String", "SUPPORT_TELEGRAM", publicValue("MAHAN_SUPPORT_TELEGRAM"))
-        buildConfigField("String", "SUPPORT_PHONE", publicValue("MAHAN_SUPPORT_PHONE"))
-        buildConfigField("String", "SUPPORT_HOURS", publicValue("MAHAN_SUPPORT_HOURS"))
+        buildConfigField("String", "SUPPORT_TELEGRAM", publicValue("MAHAN_SUPPORT_TELEGRAM", "cofenetonline25802"))
+        buildConfigField("String", "SUPPORT_PHONE", publicValue("MAHAN_SUPPORT_PHONE", "09154372582"))
+        buildConfigField("String", "SUPPORT_HOURS", publicValue("MAHAN_SUPPORT_HOURS", "همه‌روزه ۹:۰۰ الی ۲۱:۰۰"))
+        buildConfigField("String", "SUPPORT_NAME", publicValue("MAHAN_SUPPORT_NAME", "امیر نرانی"))
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
