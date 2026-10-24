@@ -9,6 +9,7 @@
 *.env
 /hosting/
 /app/release/
+/staging-artifacts/
 *.db
 *.db-shm
 *.db-wal

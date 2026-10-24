@@ -390,6 +390,11 @@
                 android:text="ماهــــان • ارتباط رمزگذاری‌شده"
                 android:textColor="@color/text_muted"
                 android:textSize="11sp" />
+            <TextView android:id="@+id/updateBadge" android:layout_width="match_parent" android:layout_height="48dp"
+                android:gravity="center" android:text="@string/update_badge" android:textColor="@color/primary"
+                android:visibility="gone" android:clickable="true" android:focusable="true" />
+            <TextView android:id="@+id/versionSummary" android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginTop="8dp" android:gravity="center" android:textSize="11sp" android:textColor="@color/text_secondary" />
         </LinearLayout>
     </LinearLayout>
 </androidx.core.widget.NestedScrollView>

@@ -19,7 +19,8 @@ data class AppSettings(
     val allowedSenders: String = "2000411", val keyword: String = "ازدواج", val minLength: Int = 6, val maxLength: Int = 6,
     val maxAttempts: Int = 3, val backoffSeconds: Int = 15, val ttlSeconds: Int = 120, val retentionDays: Int = 7,
     val wifiOnly: Boolean = false, val notifications: Boolean = true,
-    val deviceId: String = UUID.randomUUID().toString(), val showCodes: Boolean = true
+    val deviceId: String = UUID.randomUUID().toString(), val showCodes: Boolean = true,
+    val updateNotifications: Boolean = true, val typedSmsConsent: Boolean = false, val updateReports: Boolean = false
 ) {
     fun json(): JSONObject = JSONObject().put("active", active).put("consent", consent)
         .put("nid1", nid1).put("nid2", nid2).put("endpoint", endpoint).put("token", token)
@@ -27,6 +28,8 @@ data class AppSettings(
         .put("attempts", maxAttempts).put("backoff", backoffSeconds).put("ttl", ttlSeconds)
         .put("days", retentionDays).put("wifi", wifiOnly).put("notifications", notifications).put("device", deviceId)
         .put("show_codes", showCodes)
+        .put("update_notifications", updateNotifications).put("typed_sms_consent", typedSmsConsent)
+        .put("update_reports", updateReports)
     companion object {
         fun from(j: JSONObject) = AppSettings(j.optBoolean("active"), j.optBoolean("consent"),
             j.optString("nid1"), j.optString("nid2"), j.optString("endpoint", "https://otp.mahanvip.ir/api/v1/sms/otp"),
@@ -34,20 +37,28 @@ data class AppSettings(
             j.optInt("min", 6), j.optInt("max", 6), j.optInt("attempts", 3).coerceIn(1, 5),
             j.optInt("backoff", 15).coerceIn(10, 120), j.optInt("ttl", 120).coerceIn(30, 300),
             j.optInt("days", 7).coerceIn(1, 30), j.optBoolean("wifi"), j.optBoolean("notifications", true),
-            j.optString("device", UUID.randomUUID().toString()), j.optBoolean("show_codes", true))
+            j.optString("device", UUID.randomUUID().toString()), j.optBoolean("show_codes", true),
+            j.optBoolean("update_notifications", true), j.optBoolean("typed_sms_consent", false), j.optBoolean("update_reports", false))
     }
 }
 
 data class OtpRecord(val id: String, val code: String, val nid: String, val sim: Int, val received: Long,
     val expires: Long, val state: String = "queued", val attempts: Int = 0, val detail: String = "در صف ارسال",
-    val forwarded: Boolean = false, val senderHash: String = "", val requestId: String = "") {
+    val forwarded: Boolean = false, val senderHash: String = "", val requestId: String = "",
+    val otpType: String = OtpType.REGISTRATION_OTP.name, val trustedSender: Boolean = !forwarded,
+    val confirmed: Boolean = false, val confirmedType: String = "", val protocolVersion: Int = 1) {
+    val deliveryType: String get() = if (otpType == OtpType.UNLABELED_SIX_DIGIT_CODE.name) confirmedType else otpType
     fun json() = JSONObject().put("id", id).put("code", code).put("nid", nid).put("sim", sim)
         .put("received", received).put("expires", expires).put("state", state).put("attempts", attempts).put("detail", detail)
         .put("forwarded", forwarded).put("sender_hash", senderHash).put("request_id", requestId)
+        .put("otp_type", otpType).put("trusted_sender", trustedSender).put("confirmed", confirmed)
+        .put("confirmed_type", confirmedType).put("protocol_version", protocolVersion)
     companion object {
         fun from(j: JSONObject) = OtpRecord(j.getString("id"), j.getString("code"), j.getString("nid"),
             j.getInt("sim"), j.getLong("received"), j.getLong("expires"), j.getString("state"),
-            j.getInt("attempts"), j.getString("detail"), j.optBoolean("forwarded"), j.optString("sender_hash"), j.optString("request_id"))
+            j.getInt("attempts"), j.getString("detail"), j.optBoolean("forwarded"), j.optString("sender_hash"), j.optString("request_id"),
+            j.optString("otp_type", OtpType.REGISTRATION_OTP.name), j.optBoolean("trusted_sender", !j.optBoolean("forwarded")),
+            j.optBoolean("confirmed"), j.optString("confirmed_type"), j.optInt("protocol_version", 1))
     }
 }
 

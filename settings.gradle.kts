@@ -23,3 +23,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "CodResan"
 include(":app")
+include(":qa")

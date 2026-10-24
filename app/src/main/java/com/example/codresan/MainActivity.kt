@@ -45,6 +45,7 @@ class MainActivity : AppCompatActivity() {
     private var updateChecking = false
     private var requiredUpdate: AppVersionDto? = null
     private var updateDialogShown = false
+    private var requiredDialog: androidx.appcompat.app.AlertDialog? = null
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) { refreshLogs() }
     }
@@ -88,14 +89,17 @@ class MainActivity : AppCompatActivity() {
         WorkManager.getInstance(this).enqueueUniquePeriodicWork("mahan-cleanup", ExistingPeriodicWorkPolicy.KEEP,
             PeriodicWorkRequestBuilder<CleanupWorker>(15, TimeUnit.MINUTES).build())
         refreshStatus(); refreshLogs(); checkConnection(); checkUpdate()
+        UpdatePollWorker.schedule(this)
+        io.execute { UpdateReports.report(this, if (intent.getBooleanExtra("check_update", false)) "notification_opened" else "first_launch") }
     }
 
     override fun onResume() {
         super.onResume()
-        if (::rows.isInitialized) { refreshStatus(); refreshLogs(); if (requiredUpdate != null) showRequiredUpdate() }
+        if (::rows.isInitialized) { refreshStatus(); refreshLogs(); if (requiredUpdate != null) { showRequiredUpdate(); checkUpdate(force = true) } }
     }
     override fun onDestroy() {
         if (registered) unregisterReceiver(receiver)
+        requiredDialog?.dismiss()
         io.shutdownNow(); super.onDestroy()
     }
     private fun migrateOldSettings() {
@@ -174,6 +178,23 @@ class MainActivity : AppCompatActivity() {
         val active = toggle("ارسال خودکار پیامک", s.active)
         val notify = toggle("اعلان نتیجه ارسال", s.notifications)
         val showCodes = toggle("نمایش کدها در گزارش", s.showCodes)
+        val typed = toggle(getString(R.string.typed_consent_toggle), s.typedSmsConsent)
+        typed.setOnCheckedChangeListener { _, enabled ->
+            if (enabled && !store.settings().typedSmsConsent) MaterialAlertDialogBuilder(this)
+                .setTitle(R.string.typed_consent_title).setMessage(R.string.typed_consent_body)
+                .setPositiveButton(R.string.typed_consent_accept) { _, _ -> store.saveSettings(store.settings().copy(typedSmsConsent = true)) }
+                .setNegativeButton(R.string.typed_decline) { _, _ -> typed.isChecked = false }
+                .setOnCancelListener { typed.isChecked = false }.show()
+        }
+        val updateNotify = toggle(getString(R.string.update_notifications_toggle), s.updateNotifications)
+        val reports = toggle(getString(R.string.update_reporting_toggle), s.updateReports)
+        reports.setOnCheckedChangeListener { _, enabled ->
+            if (enabled && !store.settings().updateReports) MaterialAlertDialogBuilder(this)
+                .setTitle(R.string.update_reporting_toggle).setMessage(R.string.update_reporting_body)
+                .setPositiveButton(R.string.typed_consent_accept) { _, _ -> store.saveSettings(store.settings().copy(updateReports = true)) }
+                .setNegativeButton(R.string.typed_decline) { _, _ -> reports.isChecked = false }
+                .setOnCancelListener { reports.isChecked = false }.show()
+        }
         fun smallButton(title: String, action: () -> Unit) {
             content.addView(Button(this, null, android.R.attr.borderlessButtonStyle).apply {
                 text = title; textSize = 13f; isAllCaps = false; setTextColor(color(R.color.primary)); setOnClickListener { action() }
@@ -191,7 +212,9 @@ class MainActivity : AppCompatActivity() {
         MaterialAlertDialogBuilder(this).setTitle("تنظیمات")
             .setView(ScrollView(this).apply { addView(content) }).setPositiveButton("ذخیره") { _, _ ->
                 val current = store.settings()
-                store.saveSettings(current.copy(notifications = notify.isChecked, showCodes = showCodes.isChecked))
+                store.saveSettings(current.copy(notifications = notify.isChecked, showCodes = showCodes.isChecked,
+                    typedSmsConsent = typed.isChecked, updateNotifications = updateNotify.isChecked, updateReports = reports.isChecked))
+                if (updateNotify.isChecked) notificationPermission()
                 if (!active.isChecked) {
                     store.saveSettings(store.settings().copy(active = false)); DeliveryWorker.cancel(this); refreshStatus(); refreshLogs()
                 } else if (!current.active) saveAndActivate() else { refreshLogs(); if (notify.isChecked) notificationPermission() }
@@ -200,10 +223,10 @@ class MainActivity : AppCompatActivity() {
     }
     private fun privacyDialog(onRevoked: () -> Unit = {}) {
         MaterialAlertDialogBuilder(this).setTitle("حریم خصوصی")
-            .setMessage("فقط قالب واقعی پیامک سامانه ازدواج روی گوشی تشخیص داده می‌شود؛ پیامک‌های دیگر و متن کامل پیامک ذخیره یا ارسال نمی‌شوند. فوروارد همین متن از شماره‌های دیگر هم بررسی می‌شود.\n\nکد به متقاضی مرتبط یا تنها متقاضی منتظر در بات فرستاده می‌شود؛ اگر چند مقصد نامشخص باشد، شما انتخاب می‌کنید. تطبیق متن به‌تنهایی اصالت فرستنده یا معتبر بودن کد را اثبات نمی‌کند.\n\nاطلاعات محلی رمزنگاری می‌شود. اصل کد پس از انقضا حذف می‌شود و نتیجه ارسال تا ۷ روز باقی می‌ماند. پاک‌سازی پس‌زمینه تابع زمان‌بندی گوشی است. نمایش کد و توقف ارسال در تنظیمات قابل کنترل است.")
+            .setMessage(R.string.typed_privacy_body)
             .setPositiveButton("متوجه شدم", null)
             .setNeutralButton("لغو رضایت و توقف") { _, _ ->
-                store.saveSettings(store.settings().copy(active = false, consent = false))
+                store.saveSettings(store.settings().copy(active = false, consent = false, typedSmsConsent = false, updateReports = false))
                 DeliveryWorker.cancel(this); store.delete(); refreshStatus(); refreshLogs()
                 onRevoked()
             }.show()
@@ -229,6 +252,7 @@ class MainActivity : AppCompatActivity() {
                 }
                 if (connected != success) addLog(if (success) "اتصال به سرور ماهان برقرار شد." else "اتصال به سرور برقرار نیست؛ اینترنت را بررسی کنید.")
                 connected = success
+                refreshSummary()
                 if (showToast) toast(if (success) "اتصال به ماهان برقرار است." else "اتصال برقرار نشد؛ اینترنت و تنظیمات اتصال را بررسی کنید.")
             }
         }
@@ -249,23 +273,23 @@ class MainActivity : AppCompatActivity() {
             else {
                 val origin = if (r.forwarded) "پیامک فورواردشده" else if (r.sim >= 0) "پیامک سیم ${r.sim + 1}" else "پیامک سامانه"
                 val code = if (r.code.isEmpty()) "کد منقضی شده" else if (s.showCodes) "کد ${r.code}" else "کد ••••${r.code.takeLast(2)}"
-                line.addView(text("[${time(whenReceived)}] $origin ـ $code"))
+                line.addView(text("[${time(whenReceived)}] $origin ـ ${typeName(r.otpType)} ـ $code"))
                 val detail = when (r.state) {
                     "sent", "duplicate" -> "با موفقیت به بات تحویل داده شد."
                     "queued", "sending" -> "در حال ارسال…"
                     "retry" -> "اتصال برقرار نشد؛ در حال تلاش دوباره…"
-                    "choose_target" -> "متقاضی این پیامک را انتخاب کنید."
+                    "choose_target", "needs_confirmation" -> getString(R.string.otp_needs_confirmation)
                     "expired" -> "مهلت ارسال این کد تمام شده است."
                     "canceled" -> "ارسال متوقف شده است."
                     else -> "ارسال انجام نشد؛ دوباره تلاش کنید."
                 }
                 line.addView(text(detail, 11, true))
-                if (r.code.isNotEmpty() && r.state in setOf("failed", "canceled", "choose_target")) {
+                if (r.code.isNotEmpty() && r.state in setOf("failed", "canceled", "choose_target", "needs_confirmation")) {
                     val button = MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
-                        this.text = if (r.state == "choose_target") "انتخاب متقاضی" else "ارسال مجدد"
+                        this.text = if (r.state in setOf("choose_target", "needs_confirmation")) getString(R.string.otp_confirm_button) else "ارسال مجدد"
                         textSize = 11f; minHeight = 0; minimumHeight = 0; cornerRadius = dp(10)
                         setTextColor(Color.rgb(198, 244, 222)); strokeColor = android.content.res.ColorStateList.valueOf(Color.rgb(88, 145, 123))
-                        setOnClickListener { if (r.state == "choose_target") chooseTarget(r.id) else retry(r.id) }
+                        setOnClickListener { if (r.state in setOf("choose_target", "needs_confirmation")) chooseTarget(r.id) else retry(r.id) }
                     }
                     line.addView(button, LinearLayout.LayoutParams(-2, dp(42)).apply { gravity = Gravity.END; topMargin = dp(3) })
                 }
@@ -273,13 +297,14 @@ class MainActivity : AppCompatActivity() {
             rows.addView(line)
         }
         logScroll.post { logScroll.fullScroll(View.FOCUS_DOWN) }
+        refreshSummary()
     }
-    private fun checkUpdate(manual: Boolean = false) {
+    private fun checkUpdate(manual: Boolean = false, force: Boolean = manual) {
         if (updateChecking) return
         updateChecking = true
         if (manual) toast(getString(R.string.update_checking))
         io.execute {
-            val version = runCatching { CheckAppUpdateUseCase(AppUpdateRepository(this))(manual) }.getOrNull()
+            val version = runCatching { CheckAppUpdateUseCase(AppUpdateRepository(this))(force) }.getOrNull()
             runOnUiThread {
                 updateChecking = false
                 if (isFinishing || isDestroyed) return@runOnUiThread
@@ -293,6 +318,9 @@ class MainActivity : AppCompatActivity() {
                     DeliveryWorker.cancel(this); refreshStatus(); refreshLogs(); showRequiredUpdate()
                 } else {
                     requiredUpdate = null
+                    requiredDialog?.dismiss(); requiredDialog = null; updateDialogShown = false
+                    findViewById<TextView>(R.id.updateBadge).visibility = if (version.hasUpdate(BuildConfig.VERSION_CODE)) View.VISIBLE else View.GONE
+                    findViewById<TextView>(R.id.updateBadge).setOnClickListener { checkUpdate(true) }
                     if (version.hasUpdate(BuildConfig.VERSION_CODE)) UpdateDialog.show(this, version) { finish() }
                     else if (manual) toast(getString(R.string.update_current))
                 }
@@ -303,7 +331,7 @@ class MainActivity : AppCompatActivity() {
         val version = requiredUpdate ?: return
         if (updateDialogShown || isFinishing || isDestroyed) return
         updateDialogShown = true
-        UpdateDialog.show(this, version) { finish() }
+        requiredDialog = UpdateDialog.show(this, version) { finish() }
     }
     private fun retry(id: String) {
         val r = store.records().find { it.id == id } ?: return
@@ -315,21 +343,46 @@ class MainActivity : AppCompatActivity() {
     }
     private fun chooseTarget(id: String) {
         if (!store.settings().active) { toast("ابتدا سامانه را فعال کنید."); return }
+        val original = store.records().find { it.id == id } ?: return
         io.execute {
-            val targets = try { OtpApi().targets(store.settings()) } catch (_: Exception) { emptyList() }
+            val targets = try { OtpCorrelation.eligible(original, OtpApi().targets(store.settings()), System.currentTimeMillis()) } catch (_: Exception) { emptyList() }
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
-                if (targets.isEmpty()) { toast("در حال حاضر متقاضی منتظر کد نیست."); return@runOnUiThread }
-                MaterialAlertDialogBuilder(this).setTitle("کد برای کدام متقاضی است؟")
-                    .setItems(targets.map { "کد ملی ${it.nid.take(3)}••••${it.nid.takeLast(3)}" }.toTypedArray()) { _, index ->
+                if (targets.isEmpty()) { toast(getString(R.string.otp_no_eligible_request)); return@runOnUiThread }
+                MaterialAlertDialogBuilder(this).setTitle(R.string.otp_confirm_title)
+                    .setItems(targets.map { "${typeName(it.otpType)} ـ ${it.nid.take(3)}••••${it.nid.takeLast(3)}" }.toTypedArray()) { _, index ->
                         val record = store.records().find { it.id == id }
-                        if (record == null || record.code.isEmpty() || record.state != "choose_target") { toast("کد دیگر قابل ارسال نیست."); refreshLogs(); return@setItems }
+                        if (record == null || record.code.isEmpty() || record.state !in setOf("choose_target", "needs_confirmation")) { toast(getString(R.string.otp_no_longer_available)); refreshLogs(); return@setItems }
                         val target = targets[index]
-                        store.update(id) { it.copy(nid = target.nid, requestId = target.requestId, state = "queued", detail = "در صف ارسال") }
-                        DeliveryWorker.enqueue(this, id, manual = true); refreshLogs()
+                        val message = getString(R.string.otp_confirm_body, typeName(target.otpType), "${target.nid.take(3)}••••${target.nid.takeLast(3)}") +
+                            if (target.otpType == OtpType.REGISTRATION_DELETE_OTP.name) "\n\n" + getString(R.string.otp_delete_warning) else ""
+                        MaterialAlertDialogBuilder(this).setTitle(R.string.otp_confirm_title).setMessage(message)
+                            .setPositiveButton(R.string.otp_confirm_send) { _, _ ->
+                                val current = store.records().find { it.id == id }
+                                if (!store.settings().active || current == null || current.state !in setOf("choose_target", "needs_confirmation") ||
+                                    OtpCorrelation.eligible(current, listOf(target), System.currentTimeMillis()).isEmpty()) {
+                                    toast(getString(R.string.otp_no_longer_available)); return@setPositiveButton
+                                }
+                                store.update(id) { it.copy(nid = target.nid, requestId = target.requestId, state = "queued",
+                                    expires = minOf(it.expires, target.expires), confirmed = true, confirmedType = target.otpType,
+                                    protocolVersion = if (target.typedProtocol) 2 else 1) }
+                                DeliveryWorker.enqueue(this, id, manual = true); refreshLogs()
+                            }.setNegativeButton(R.string.typed_decline, null).show()
                     }.setNegativeButton("بازگشت", null).show()
             }
         }
+    }
+    private fun typeName(type: String) = getString(when (type) {
+        OtpType.TRACKING_RECOVERY_OTP.name -> R.string.type_recovery
+        OtpType.REGISTRATION_DELETE_OTP.name -> R.string.type_deletion
+        OtpType.UNLABELED_SIX_DIGIT_CODE.name -> R.string.type_unlabeled
+        else -> R.string.type_registration
+    })
+    private fun refreshSummary() {
+        if (!::rows.isInitialized) return
+        val last = store.lastConnection()
+        findViewById<TextView>(R.id.versionSummary).text = getString(R.string.home_technical_summary,
+            BuildConfig.VERSION_NAME, store.records().size, if (last > 0) time(last) else getString(R.string.no_connection_yet))
     }
     private fun addLog(value: String) {
         events.add(System.currentTimeMillis() to value)

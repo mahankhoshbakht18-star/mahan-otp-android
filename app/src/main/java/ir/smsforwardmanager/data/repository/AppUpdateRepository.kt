@@ -4,7 +4,7 @@ import android.content.Context
 import ir.smsforwardmanager.data.remote.AppVersionApi
 import ir.smsforwardmanager.data.remote.model.AppVersionDto
 
-class AppUpdateRepository(context: Context, private val api: AppVersionApi = AppVersionApi()) {
+class AppUpdateRepository(context: Context, private val api: AppVersionApi = AppVersionApi(context.applicationContext)) {
     private val prefs = context.getSharedPreferences("app_update_metadata", Context.MODE_PRIVATE)
     fun requiredCached(installed: Int): AppVersionDto? = runCatching {
         AppVersionApi.decode(prefs.getString("metadata", "").orEmpty()).validate()

@@ -21,9 +21,12 @@ class SmsReceiver : BroadcastReceiver() {
                 val sender = parts.first().displayOriginatingAddress.orEmpty()
                 if (parts.any { it.displayOriginatingAddress != parts.first().displayOriginatingAddress }) return@execute
                 val body = parts.joinToString("") { it.displayMessageBody.orEmpty() }
-                val otp = LoanRules.extract(body, sender, LoanRules.senders(settings.allowedSenders), settings.keyword,
-                    settings.minLength, settings.maxLength)
-                if (otp == null) { store.reject(); return@execute }
+                val parsed = LoanRules.parse(body, settings.minLength, settings.maxLength)
+                if (parsed == null || (parsed.type != OtpType.REGISTRATION_OTP && !settings.typedSmsConsent)) { store.reject(); return@execute }
+                val trusted = LoanRules.sender(sender) in LoanRules.senders(settings.allowedSenders)
+                val senderHash = LoanRules.phoneHash(sender)
+                // A bare code from an unknown service sender is not even persisted.
+                if (parsed.type == OtpType.UNLABELED_SIX_DIGIT_CODE && !trusted && senderHash.isBlank()) { store.reject(); return@execute }
                 val sim = resolveSlot(intent)
                 val forwarded = LoanRules.sender(sender) !in LoanRules.senders(settings.allowedSenders)
                 val nid = if (forwarded) "" else when (sim) { 0 -> settings.nid1; 1 -> settings.nid2; else -> "" }
@@ -32,9 +35,12 @@ class SmsReceiver : BroadcastReceiver() {
                     store.reject(); DeliveryWorker.announce(context); return@execute
                 }
                 val id = LoanRules.messageId(body, sender, timestamp, sim)
-                if (store.insert(OtpRecord(id, otp, nid, sim, timestamp, timestamp + settings.ttlSeconds * 1000L,
-                    forwarded = forwarded, senderHash = if (forwarded) LoanRules.phoneHash(sender) else ""))) {
-                    DeliveryWorker.enqueue(context, id); DeliveryWorker.announce(context)
+                val needsConfirmation = parsed.type == OtpType.UNLABELED_SIX_DIGIT_CODE
+                if (store.insert(OtpRecord(id, parsed.code, nid, sim, timestamp, timestamp + settings.ttlSeconds * 1000L,
+                    state = if (needsConfirmation) "needs_confirmation" else "queued",
+                    forwarded = forwarded, senderHash = senderHash, otpType = parsed.type.name, trustedSender = trusted))) {
+                    if (!needsConfirmation) DeliveryWorker.enqueue(context, id)
+                    DeliveryWorker.announce(context)
                 }
             } catch (_: Exception) { /* Fail closed; never log content or bypass secure storage. */ }
             finally { pending.finish() }

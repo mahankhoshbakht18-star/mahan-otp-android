@@ -11,7 +11,7 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import ir.smsforwardmanager.data.remote.model.AppVersionDto
 
 object UpdateDialog {
-    fun show(activity: AppCompatActivity, version: AppVersionDto, onRequiredExit: () -> Unit) {
+    fun show(activity: AppCompatActivity, version: AppVersionDto, onRequiredExit: () -> Unit): androidx.appcompat.app.AlertDialog {
         version.validate()
         val required = version.isMandatory(BuildConfig.VERSION_CODE)
         val message = activity.getString(if (required) R.string.update_required_body else R.string.update_optional_body,
@@ -26,7 +26,8 @@ object UpdateDialog {
         dialog.setOnShowListener {
             dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 try {
-                    activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(version.downloadUrl)))
+                    activity.startActivity(Intent(activity, UpdateInstallActivity::class.java)
+                        .putExtra("metadata", ir.smsforwardmanager.data.remote.AppVersionApi.encode(version)))
                     // Optional updates may be dismissed; required updates stay visible until rechecked.
                     if (!required) dialog.dismiss()
                 } catch (_: ActivityNotFoundException) {
@@ -35,5 +36,6 @@ object UpdateDialog {
             }
         }
         dialog.show()
+        return dialog
     }
 }

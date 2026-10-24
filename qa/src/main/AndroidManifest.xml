@@ -1,0 +1,5 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:label="Mahan internal QA only" android:allowBackup="false" />
+    <instrumentation android:name=".UpgradeProbe" android:targetPackage="com.example.codresan"
+        android:functionalTest="true" android:handleProfiling="false" />
+</manifest>

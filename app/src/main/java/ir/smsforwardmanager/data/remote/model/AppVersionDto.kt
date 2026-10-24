@@ -6,7 +6,11 @@ data class AppVersionDto(
     val minSupportedVersionCode: Int,
     val downloadUrl: String,
     val releaseNotes: String,
-    val apkSha256: String
+    val apkSha256: String,
+    val packageName: String = "com.example.codresan",
+    val certificateSha256: String = "aa151db817e67e44f31840b3deb0e5b146723d0586097dd1096dda33c3f20259",
+    val publishedAt: String = "",
+    val updatePriority: String = "normal"
 ) {
     fun hasUpdate(installed: Int) = versionCode > installed
     fun isMandatory(installed: Int) = hasUpdate(installed) && installed < minSupportedVersionCode
@@ -15,6 +19,9 @@ data class AppVersionDto(
         require(versionName.isNotBlank() && versionName.length <= 50)
         require(releaseNotes.length <= 4000)
         require(Regex("[a-fA-F0-9]{64}").matches(apkSha256))
+        require(Regex("[a-fA-F0-9]{64}").matches(certificateSha256))
+        require(packageName == "com.example.codresan")
+        require(updatePriority in setOf("normal", "critical") && publishedAt.length <= 50)
         require(trustedDownloadUrl(downloadUrl))
         return this
     }

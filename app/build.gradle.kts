@@ -31,8 +31,8 @@ android {
         applicationId = "com.example.codresan"
         minSdk = 24     // پشتیبانی از اندروید ۷ به بالا
         targetSdk = 36
-        versionCode = 4
-        versionName = "2.1.0"
+        versionCode = 5
+        versionName = "2.2.0"
 
         fun publicValue(name: String, fallback: String = "") = "\"" + (System.getenv(name) ?: fallback)
             .replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", " ").replace("\r", " ") + "\""

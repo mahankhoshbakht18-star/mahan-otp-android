@@ -20,7 +20,8 @@ class DeliveryWorker(context: Context, params: WorkerParameters) : Worker(contex
         val settings = store.settings()
         var record = store.records().find { it.id == id } ?: return Result.success()
         if (!settings.active || !settings.consent || !hasSmsPermission(applicationContext) ||
-            record.state in setOf("sent", "duplicate", "expired", "canceled")) return Result.success()
+            record.state in setOf("sent", "duplicate", "expired", "canceled", "needs_confirmation", "choose_target")) return Result.success()
+        if (record.otpType != OtpType.REGISTRATION_OTP.name && !settings.typedSmsConsent) return Result.success()
         if (System.currentTimeMillis() >= record.expires || record.code.isEmpty()) {
             store.update(id) { it.copy(code = "", state = "expired", detail = "کد منقضی شده است") }; return Result.success()
         }
@@ -38,17 +39,17 @@ class DeliveryWorker(context: Context, params: WorkerParameters) : Worker(contex
                 api.deliver(settings, record) { isStopped || !store.settings().active || store.records().none { it.id == id } }
             } else {
             val targets = api.targets(settings)
-            val target = if (record.nid.isNotBlank()) targets.singleOrNull { it.nid == record.nid }
-                else targets.filter { record.senderHash.isNotBlank() && it.senderHash == record.senderHash }.singleOrNull()
-                    ?: targets.singleOrNull()
+            val decision = OtpCorrelation.decide(record, targets, System.currentTimeMillis())
+            val target = decision.target
             when {
-                target == null && targets.size > 1 && record.nid.isBlank() -> DeliveryOutcome("choose_target", "چند متقاضی منتظرند؛ مقصد کد را انتخاب کنید")
+                decision.state == "needs_confirmation" -> DeliveryOutcome("needs_confirmation", "نوع عملیات و متقاضی نیاز به تأیید دارد")
                 target == null -> DeliveryOutcome("retry", "متقاضی هنوز در بات منتظر کد نیست", true)
                 record.requestId.isNotBlank() && record.requestId != target.requestId -> DeliveryOutcome("expired", "درخواست قبلی پایان یافته؛ کد جدید لازم است")
                 record.received + 5000 < target.waitingSince -> DeliveryOutcome("expired", "این کد پیش از درخواست جاری دریافت شده است")
                 else -> {
-                    record = record.copy(nid = target.nid, requestId = target.requestId)
-                    store.update(id) { it.copy(nid = target.nid, requestId = target.requestId) }
+                    record = record.copy(nid = target.nid, requestId = target.requestId, expires = minOf(record.expires, target.expires),
+                        protocolVersion = if (target.typedProtocol) 2 else 1)
+                    store.update(id) { record }
                     api.deliver(settings, record) { isStopped || !store.settings().active || store.records().none { it.id == id } }
                 }
             }
@@ -82,7 +83,7 @@ class DeliveryWorker(context: Context, params: WorkerParameters) : Worker(contex
         fun cancel(context: Context) {
             WorkManager.getInstance(context).cancelAllWorkByTag(TAG)
             val store = SecureStore(context)
-            store.records().filter { it.state in setOf("queued", "sending", "retry", "failed", "choose_target") }.forEach { r ->
+            store.records().filter { it.state in setOf("queued", "sending", "retry", "failed", "choose_target", "needs_confirmation") }.forEach { r ->
                 store.update(r.id) { it.copy(state = "canceled", detail = "به درخواست شما متوقف شد") }
             }
             announce(context)

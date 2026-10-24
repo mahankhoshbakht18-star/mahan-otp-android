@@ -10,7 +10,9 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 data class DeliveryOutcome(val state: String, val message: String, val retry: Boolean = false)
-data class OtpTarget(val nid: String, val requestId: String, val senderHash: String, val waitingSince: Long)
+data class OtpTarget(val nid: String, val requestId: String, val senderHash: String, val waitingSince: Long,
+    val expires: Long = Long.MAX_VALUE, val otpType: String = OtpType.REGISTRATION_OTP.name,
+    val deleteApproved: Boolean = false, val typedProtocol: Boolean = false, val requiresConfirmation: Boolean = false)
 class TargetException(val outcome: DeliveryOutcome) : Exception()
 
 object DeliveryPolicy {
@@ -19,6 +21,7 @@ object DeliveryPolicy {
         404 -> DeliveryOutcome("failed", "متقاضی یا مسیر امن روی سرور پیدا نشد")
         409 -> DeliveryOutcome("failed", "متقاضی در انتظار کد نیست؛ ارسال انجام نشد")
         410 -> DeliveryOutcome("expired", "سرور کد را منقضی تشخیص داد")
+        426 -> DeliveryOutcome("failed", "این نسخه دیگر پشتیبانی نمی‌شود؛ برنامه را به‌روزرسانی کنید")
         408, 425, 429 -> DeliveryOutcome("retry", "سرور موقتاً آماده نیست؛ تلاش دوباره", true)
         in 500..599 -> DeliveryOutcome("retry", "سرور در دسترس نیست؛ تلاش دوباره", true)
         else -> DeliveryOutcome("failed", "درخواست پذیرفته نشد (خطای $code)")
@@ -31,6 +34,12 @@ class OtpApi(private val client: OkHttpClient = client()) {
         val payload = JSONObject().put("device_id", settings.deviceId).put("message_id", record.id)
             .put("national_id", record.nid).put("otp", record.code).put("received_at", record.received / 1000.0)
             .put("source", "android").put("consent_version", "1").put("request_id", record.requestId)
+        if (record.protocolVersion >= 2) payload.put("otp_type", record.deliveryType)
+            .put("source_type", record.otpType).put("match_status", if (record.confirmed) "USER_CONFIRMED" else "MATCHED")
+            .put("sender_reference", if (record.trustedSender) "service:2000411" else record.senderHash).put("app_version", BuildConfig.VERSION_NAME)
+            .put("app_version_code", BuildConfig.VERSION_CODE)
+            .put("event_id", record.id)
+        else if (record.otpType != OtpType.REGISTRATION_OTP.name) return DeliveryOutcome("failed", "سرور فعلی از این نوع کد پشتیبانی نمی‌کند")
         val request = Request.Builder().url(settings.endpoint)
             .header("X-DEVICE-KEY", settings.token).header("X-DEVICE-ID", settings.deviceId)
             .header("Idempotency-Key", record.id).header("Cache-Control", "no-store")
@@ -63,8 +72,12 @@ class OtpApi(private val client: OkHttpClient = client()) {
                 val data = JSONObject(it.body?.string().orEmpty())
                 if (data.optString("status") != "ok") throw TargetException(DeliveryOutcome("failed", "پاسخ مقصد معتبر نیست"))
                 val items = data.getJSONArray("targets")
+                val typed = data.optInt("protocol_version", 1) >= 2
                 return (0 until items.length()).map { index -> val j = items.getJSONObject(index)
-                    OtpTarget(j.getString("national_id"), j.getString("job_id"), j.optString("sender_hash"), (j.getDouble("waiting_since") * 1000).toLong()) }
+                    OtpTarget(j.getString("national_id"), j.getString("job_id"), j.optString("sender_hash"), (j.getDouble("waiting_since") * 1000).toLong(),
+                        if (j.has("expires_at")) (j.getDouble("expires_at") * 1000).toLong() else Long.MAX_VALUE,
+                        j.optString("otp_type", OtpType.REGISTRATION_OTP.name), j.optBoolean("delete_approved"), typed,
+                        j.optBoolean("requires_confirmation")) }
             }
         } catch (e: TargetException) { throw e }
         catch (_: IOException) { throw TargetException(DeliveryOutcome("retry", "ارتباط با سرور برقرار نشد", true)) }

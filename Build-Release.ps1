@@ -1,4 +1,4 @@
-param([string]$JavaDirectory = 'C:\Users\amir\.jdks\ms-17.0.17', [switch]$SkipUnavailableLint)
+param([string]$JavaDirectory = 'C:\Users\amir\.jdks\ms-17.0.17', [switch]$SkipUnavailableLint, [switch]$IncludeQaProbe)
 $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
 $connectionPath = if ($env:MAHAN_CONNECTION_FILE) { $env:MAHAN_CONNECTION_FILE } else { Join-Path $PSScriptRoot '.private\connection.json' }
@@ -31,6 +31,7 @@ if (!(Test-Path -LiteralPath $env:MAHAN_KEYSTORE)) {
 }
 try {
     $buildArguments = @(':app:testDebugUnitTest', ':app:assembleRelease', ':app:bundleRelease', '--no-daemon', '--console=plain')
+    if ($IncludeQaProbe) { $buildArguments += ':qa:assembleRelease' }
     if ($SkipUnavailableLint) {
         Write-Warning 'Lint is being skipped explicitly due to unavailable dependencies. This is not a passed Lint check.'
         $buildArguments += @('-x', 'lintVitalAnalyzeRelease', '-x', 'lintVitalReportRelease', '-x', 'lintVitalRelease', '--offline')
