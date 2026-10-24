@@ -111,6 +111,8 @@ try:
             button = next((node for node in root.iter("node") if node.attrib.get("resource-id") == PACKAGE + ":id/btnSettings"), None)
             if button is not None:
                 break
+            # Scroll up towards top of screen in case main scroll view was scrolled down
+            adb("shell", "input", "swipe", "160", "150", "160", "500", "300")
         time.sleep(1)
     if button is None:
         raise RuntimeError("btnSettings not found on main screen")
