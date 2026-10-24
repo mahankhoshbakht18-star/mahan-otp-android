@@ -49,6 +49,12 @@ def screenshot(name):
 
 
 try:
+    # Device-side app requests must never reach the operational relay during QA.
+    # Host-side artifact downloads are unaffected; SMS console delivery needs no data.
+    adb("shell", "svc", "wifi", "disable")
+    adb("shell", "svc", "data", "disable")
+    time.sleep(3)
+    results.append({"test": "device-data-and-wifi-disabled", "passed": True})
     old = ARTIFACTS / "classic-2.1.0.apk"
     new = ARTIFACTS / "MAHANBOT-Android-release.apk"
     qa = ARTIFACTS / "mahan-upgrade-probe.apk"
@@ -97,6 +103,15 @@ try:
     if "FATAL EXCEPTION" in log:
         raise RuntimeError("AndroidRuntime crash recorded")
     results.append({"test":"no-android-runtime-crash","passed":True})
+except Exception:
+    import traceback
+    (ARTIFACTS / "emulator-failure.txt").write_text(traceback.format_exc(), encoding="utf-8")
+    try:
+        screenshot("failure.png")
+        (ARTIFACTS / "android-runtime-errors.txt").write_text(adb("logcat", "-d", "-s", "AndroidRuntime:E"), encoding="utf-8")
+    except Exception:
+        pass
+    raise
 finally:
     (ARTIFACTS / "emulator-results.json").write_text(json.dumps(results,indent=2),encoding="utf-8")
 print(json.dumps(results,indent=2))

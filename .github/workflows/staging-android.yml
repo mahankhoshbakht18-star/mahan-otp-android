@@ -39,6 +39,10 @@ jobs:
             app/build/reports/lint-results-debug.*
           retention-days: 14
   isolated-android:
+    # GitHub hides draft releases from read-only installation tokens.
+    # Only the trusted branch's isolated test job needs draft visibility.
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -81,6 +85,8 @@ jobs:
           path: |
             staging-artifacts/*.png
             staging-artifacts/*results.json
+            staging-artifacts/*failure.txt
+            staging-artifacts/android-runtime-errors.txt
             app/build/reports/tests/
             app/build/reports/lint-results-debug.*
           retention-days: 14
