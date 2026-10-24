@@ -173,6 +173,12 @@ class RelayTests(unittest.TestCase):
         self.assertEqual(self.send(app_version_code=5,match_status="MATCHED").status_code,409)
         self.assertEqual(self.send(app_version_code=5,match_status="USER_CONFIRMED").status_code,200)
 
+    def test_consumed_code_cannot_be_reused_for_next_request(self):
+        self.wait();self.send()
+        self.client.post(f"/api/v1/bot/consumed/{self.nid}",params={"request_id":self.job},headers=self.bot_headers)
+        self.wait("fixture-next-request")
+        self.assertEqual(self.send(message_id="fixture-new-message",request_id="fixture-next-request").status_code,410)
+
     def test_old_clear_cannot_cancel_a_new_request(self):
         self.wait("fixture-request-2")
         self.assertEqual(self.client.post(f"/api/v1/bot/clear/{self.nid}", params={"request_id": self.job}, headers=self.bot_headers).status_code, 409)

@@ -302,7 +302,7 @@ def bot_wait(payload: WaitRequest) -> dict:
             conn.rollback()
             return {"accepted": existing["status"] == "waiting", "expires_at": existing["expires_at"]}
         ambiguous_replacement = bool(existing and existing["job_id"] != payload.job_id and existing["otp_type"] == payload.otp_type
-            and existing["expires_at"] > now - MAX_OTP_AGE_SECONDS)
+            and existing["status"] != "consumed" and existing["expires_at"] > now - MAX_OTP_AGE_SECONDS)
         conn.execute(
             "UPDATE otp_messages SET status='superseded' "
             "WHERE national_id=? AND status IN ('received','delivered')",
@@ -550,6 +550,11 @@ def phone_otp(
         if payload.received_at + WAIT_CLOCK_SKEW_SECONDS < float(wait["waiting_since"]):
             conn.rollback()
             raise HTTPException(status_code=410, detail="otp_before_wait_window")
+        for old in conn.execute("SELECT request_id,body_hash FROM otp_messages WHERE national_id=? AND otp_type=? AND request_id<>? AND status='consumed' AND created_at>?",
+                (payload.national_id, payload.otp_type, payload.request_id, now-MAX_OTP_AGE_SECONDS)):
+            previous_hash=hmac.new(PHONE_KEY.encode(), f"{payload.national_id}|{old['request_id']}|{payload.otp_type}|{payload.otp}".encode(), "sha256").hexdigest()
+            if old["body_hash"] and hmac.compare_digest(old["body_hash"],previous_hash):
+                raise HTTPException(410, "consumed_code_cannot_be_reassigned")
 
         conn.execute(
             "UPDATE otp_messages SET status='superseded' "
