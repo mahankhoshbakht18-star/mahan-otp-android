@@ -51,10 +51,15 @@ def screenshot(name):
 try:
     # Device-side app requests must never reach the operational relay during QA.
     # Host-side artifact downloads are unaffected; SMS console delivery needs no data.
-    adb("shell", "svc", "wifi", "disable")
-    adb("shell", "svc", "data", "disable")
+    adb("shell", "settings", "put", "global", "http_proxy", "127.0.0.1:9")
+    assert adb("shell", "settings", "get", "global", "http_proxy").strip() == "127.0.0.1:9"
+    # API 24's emulator has no supported Wi-Fi service and may return exit 1.
+    # OkHttp still uses the verified, intentionally unavailable system HTTP proxy.
+    for service in ("wifi", "data"):
+        subprocess.run(["adb", "-s", serial, "shell", "svc", service, "disable"],
+                       stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=30)
     time.sleep(3)
-    results.append({"test": "device-data-and-wifi-disabled", "passed": True})
+    results.append({"test": "app-network-blocked-by-system-proxy", "passed": True})
     old = ARTIFACTS / "classic-2.1.0.apk"
     new = ARTIFACTS / "MAHANBOT-Android-release.apk"
     qa = ARTIFACTS / "mahan-upgrade-probe.apk"

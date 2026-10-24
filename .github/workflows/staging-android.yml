@@ -3,10 +3,16 @@ on:
   push:
     branches: [feature/typed-otp-updater-20261024]
   workflow_dispatch:
+    inputs:
+      emulator_only:
+        description: 'Verify the already-built, checksum-pinned APK only (source checks must pass separately)'
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
   source-checks:
+    if: ${{ !inputs.emulator_only }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
