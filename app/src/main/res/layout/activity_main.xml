@@ -43,6 +43,7 @@
                 <Space android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnSettings"
+                    android:fontFamily="sans"
                     style="@style/Widget.Material3.Button.OutlinedButton"
                     android:layout_width="wrap_content"
                     android:layout_height="44dp"
@@ -291,6 +292,7 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnPermissions"
+                android:fontFamily="sans"
                 style="@style/Widget.Material3.Button.OutlinedButton"
                 android:layout_width="match_parent"
                 android:layout_height="56dp"
@@ -315,6 +317,7 @@
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnSave"
+                android:fontFamily="sans"
                 android:layout_width="match_parent"
                 android:layout_height="58dp"
                 android:layout_marginTop="10dp"

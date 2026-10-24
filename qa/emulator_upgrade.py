@@ -101,14 +101,44 @@ try:
     adb("shell", "uiautomator", "dump", "/sdcard/mahan-window.xml")
     xml = adb("shell", "cat", "/sdcard/mahan-window.xml")
     root = ET.fromstring(xml[xml.find("<?xml"):])
-    button = next(node for node in root.iter("node") if node.attrib.get("resource-id") == PACKAGE + ":id/btnSettings")
+    button = None
+    for _ in range(10):
+        adb("shell", "uiautomator", "dump", "/sdcard/mahan-window.xml")
+        xml = adb("shell", "cat", "/sdcard/mahan-window.xml")
+        idx = xml.find("<?xml")
+        if idx != -1:
+            root = ET.fromstring(xml[idx:])
+            button = next((node for node in root.iter("node") if node.attrib.get("resource-id") == PACKAGE + ":id/btnSettings"), None)
+            if button is not None:
+                break
+        time.sleep(1)
+    if button is None:
+        raise RuntimeError("btnSettings not found on main screen")
     import re
     x1,y1,x2,y2 = map(int, re.findall(r"\d+", button.attrib["bounds"]))
-    adb("shell", "input", "tap", str((x1+x2)//2), str((y1+y2)//2));time.sleep(2)
-    adb("shell", "uiautomator", "dump", "/sdcard/mahan-window.xml")
-    xml=adb("shell","cat","/sdcard/mahan-window.xml")
-    root=ET.fromstring(xml[xml.find("<?xml"):])
-    support=next(node for node in root.iter("node") if node.attrib.get("text") == "پشتیبانی ماهان")
+    adb("shell", "input", "tap", str((x1+x2)//2), str((y1+y2)//2))
+    support = None
+    for _ in range(10):
+        time.sleep(1)
+        adb("shell", "uiautomator", "dump", "/sdcard/mahan-window.xml")
+        xml = adb("shell", "cat", "/sdcard/mahan-window.xml")
+        idx = xml.find("<?xml")
+        if idx != -1:
+            root = ET.fromstring(xml[idx:])
+            support = next((node for node in root.iter("node") if node.attrib.get("text") == "پشتیبانی ماهان"), None)
+            if support is not None:
+                break
+            scroll = next((node for node in root.iter("node") if "scroll" in node.attrib.get("class", "").lower()), None)
+            if scroll is not None:
+                sx1, sy1, sx2, sy2 = map(int, re.findall(r"\d+", scroll.attrib["bounds"]))
+                smid_x = (sx1 + sx2) // 2
+                start_y = int(sy1 + (sy2 - sy1) * 0.75)
+                end_y = int(sy1 + (sy2 - sy1) * 0.25)
+                adb("shell", "input", "swipe", str(smid_x), str(start_y), str(smid_x), str(end_y), "300")
+            else:
+                adb("shell", "input", "swipe", "160", "450", "160", "200", "300")
+    if support is None:
+        raise RuntimeError("Settings dialog or 'پشتیبانی ماهان' button not found in UI dump")
     x1,y1,x2,y2=map(int,re.findall(r"\d+",support.attrib["bounds"]))
     adb("shell","input","tap",str((x1+x2)//2),str((y1+y2)//2));time.sleep(3)
     screenshot("support.png")

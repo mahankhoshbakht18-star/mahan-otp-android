@@ -45,6 +45,7 @@ jobs:
             app/build/reports/lint-results-debug.*
           retention-days: 14
   isolated-android:
+    if: ${{ github.event_name == 'workflow_dispatch' }}
     # GitHub hides draft releases from read-only installation tokens.
     # Only the trusted branch's isolated test job needs draft visibility.
     permissions:
