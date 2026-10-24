@@ -59,7 +59,9 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
+            // CI builds unsigned; the original key never leaves the owner's machine.
             signingConfig = signingConfigs.getByName("production")
+                .takeIf { !System.getenv("MAHAN_KEYSTORE").isNullOrBlank() }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

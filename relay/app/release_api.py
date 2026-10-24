@@ -3,6 +3,7 @@
 No FCM is configured: notifications below are queued-for-poll, never called delivered push.
 """
 from __future__ import annotations
+import asyncio
 import hashlib
 import json
 import os
@@ -186,7 +187,8 @@ def register_routes(app, path_provider: Callable[[], Path], phone_auth, bot_auth
                     output.write(chunk)
             if size < 1024:
                 raise HTTPException(422, "invalid_apk")
-            verified = verify_apk(partial)
+            # Android verification starts subprocesses; keep OTP handling responsive.
+            verified = await asyncio.to_thread(verify_apk, partial)
             sha = digest.hexdigest()
             target = partial.with_name(sha + ".apk")
             partial.replace(target)
