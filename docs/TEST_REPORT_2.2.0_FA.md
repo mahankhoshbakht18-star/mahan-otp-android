@@ -13,7 +13,7 @@
 | Target SDK | 36 |
 | اندازه APK | 2,457,659 بایت |
 | نوع ساخت | Release با R8؛ نه Debug |
-| SHA-256 فایل | `3dd712de1c328ea84df59226dce7907e66ef893f96da9c068e097bc07c75be16` |
+| SHA-256 فایل | `b02a5ff5ea357990e0c1d7e45f512914eccaee920e485e2e7fa2550b2a04c6ba` |
 | SHA-256 گواهی امضا | `aa151db817e67e44f31840b3deb0e5b146723d0586097dd1096dda33c3f20259` |
 
 امضای کامل با `apksigner verify` و مشخصات بسته با `aapt dump badging` بررسی شدند. گواهی نسخه ۲.۱.۰ قبلی دقیقاً یکسان است؛ فایل قبلی Build 4 بوده است.
