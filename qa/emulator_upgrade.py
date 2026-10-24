@@ -102,12 +102,18 @@ try:
     xml = adb("shell", "cat", "/sdcard/mahan-window.xml")
     root = ET.fromstring(xml[xml.find("<?xml"):])
     button = None
-    for _ in range(10):
+    for _ in range(12):
         adb("shell", "uiautomator", "dump", "/sdcard/mahan-window.xml")
         xml = adb("shell", "cat", "/sdcard/mahan-window.xml")
         idx = xml.find("<?xml")
         if idx != -1:
             root = ET.fromstring(xml[idx:])
+            # Dismiss any system ANR dialog (e.g. Pixel Launcher isn't responding)
+            if any("responding" in node.attrib.get("text", "") or node.attrib.get("text") == "Close app" for node in root.iter("node")):
+                adb("shell", "input", "keyevent", "4")
+                time.sleep(1)
+                launch()
+                continue
             button = next((node for node in root.iter("node") if node.attrib.get("resource-id") == PACKAGE + ":id/btnSettings"), None)
             if button is not None:
                 break
