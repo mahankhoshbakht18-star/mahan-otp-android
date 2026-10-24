@@ -89,8 +89,23 @@ class UpgradeProbe : Instrumentation() {
             }
             result.putString("result", "QA_SUCCESS:$action")
             finish(Activity.RESULT_OK, result)
-        } catch (_: Throwable) {
+        } catch (failure: Throwable) {
             result.putString("result", "QA_FAILURE:$action")
+            result.putString("failure_location", failure.javaClass.simpleName + "@" + failure.stackTrace.firstOrNull()?.let { it.fileName + ":" + it.lineNumber })
+            // Only flags/type/state/age from isolated fixtures; never code, NID, token or body.
+            runCatching {
+                val data=read(); val settings=data.getJSONObject("settings"); val records=data.optJSONArray("records") ?: JSONArray()
+                val rows=JSONArray()
+                for(index in 0 until records.length()) {
+                    val row=records.getJSONObject(index)
+                    rows.put(JSONObject().put("type",row.optString("otp_type","legacy"))
+                        .put("state",row.optString("state")).put("age_ms",System.currentTimeMillis()-row.optLong("received")))
+                }
+                result.putString("safe_diagnostics",JSONObject().put("active",settings.optBoolean("active"))
+                    .put("consent",settings.optBoolean("consent")).put("typed_consent",settings.optBoolean("typed_sms_consent"))
+                    .put("sms_permission",targetContext.checkSelfPermission("android.permission.RECEIVE_SMS")==0)
+                    .put("rejected",data.optLong("rejected")).put("records",rows).toString())
+            }
             finish(Activity.RESULT_CANCELED, result)
         }
     }

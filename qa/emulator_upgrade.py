@@ -53,11 +53,8 @@ try:
     # Host-side artifact downloads are unaffected; SMS console delivery needs no data.
     adb("shell", "settings", "put", "global", "http_proxy", "127.0.0.1:9")
     assert adb("shell", "settings", "get", "global", "http_proxy").strip() == "127.0.0.1:9"
-    # API 24's emulator has no supported Wi-Fi service and may return exit 1.
-    # OkHttp still uses the verified, intentionally unavailable system HTTP proxy.
-    for service in ("wifi", "data"):
-        subprocess.run(["adb", "-s", serial, "shell", "svc", service, "disable"],
-                       stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=30)
+    # Keep the radio available for realistic emulator SMS delivery. All app
+    # OkHttp clients use the verified, intentionally unavailable system proxy.
     time.sleep(3)
     results.append({"test": "app-network-blocked-by-system-proxy", "passed": True})
     old = ARTIFACTS / "classic-2.1.0.apk"
@@ -67,11 +64,17 @@ try:
     adb("install", "-r", str(qa))
     probe("seed")
     # The stored API points at test.invalid; no synthetic OTP is sent to production.
-    launch()
-    screenshot("before-upgrade.png")
+    if adb("shell", "getprop", "ro.build.version.sdk").strip() == "24":
+        # The real 2.1.0 baseline crashes in TextView_fontFamily on this API.
+        # Seeded old-schema data/Keystore remain valid for a genuine in-place upgrade.
+        results.append({"test": "baseline-2.1.0-ui", "status": "known-baseline-font-crash-not-relaunched"})
+    else:
+        launch()
+        screenshot("before-upgrade.png")
     adb("install", "-r", str(new))
     launch()
     probe("verify-upgrade")
+    launch()  # Finishing custom instrumentation terminates its target process.
     screenshot("after-upgrade.png")
     adb("shell", "pm", "grant", PACKAGE, "android.permission.RECEIVE_SMS")
     probe("enable-sms")
@@ -81,13 +84,19 @@ try:
                  "بانک: رمز پویا 888888"):
         adb("emu", "sms", "send", "2000411", text)
         time.sleep(3)
+    # Ordered SMS delivery and cold-start receivers can lag on shared CI hosts.
+    time.sleep(15)
+    launch()
+    screenshot("typed-sms-before-probe.png")
     probe("verify-sms")
+    launch()
     screenshot("typed-sms.png")
     # Isolated emulator only: fresh install, no real user data exists in this device.
     adb("uninstall", PACKAGE)
     adb("install", str(new))
     launch()
     probe("verify-fresh")
+    launch()
     screenshot("fresh-install.png")
     adb("shell", "uiautomator", "dump", "/sdcard/mahan-window.xml")
     xml = adb("shell", "cat", "/sdcard/mahan-window.xml")
