@@ -24,7 +24,7 @@ try {
     if ($LASTEXITCODE -ne 0 -or !($verification -match 'certificate SHA-256 digest: aa151db817e67e44f31840b3deb0e5b146723d0586097dd1096dda33c3f20259')) { throw 'Original signature verification failed' }
     $verification
     $badging = & "$buildTools\aapt.exe" dump badging $OutputApk
-    if ($LASTEXITCODE -ne 0 -or !($badging -match "package: name='com.example.codresan' versionCode='5' versionName='2.2.0'") -or ($badging -match 'application-debuggable')) { throw 'Wrong APK identity or debug build' }
+    if ($LASTEXITCODE -ne 0 -or !($badging -match "package: name='(com\.example\.codresan|ir\.mahanvip\.otp)' versionCode='5' versionName='2.2.0'") -or ($badging -match 'application-debuggable')) { throw 'Wrong APK identity or debug build' }
     Get-FileHash -LiteralPath $OutputApk -Algorithm SHA256
 } finally {
     Remove-Item Env:MAHAN_STORE_PASSWORD,Env:MAHAN_KEY_PASSWORD -ErrorAction SilentlyContinue

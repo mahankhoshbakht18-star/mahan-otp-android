@@ -28,7 +28,7 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.example.codresan"
+        applicationId = "ir.mahanvip.otp"
         minSdk = 24     // پشتیبانی از اندروید ۷ به بالا
         targetSdk = 36
         versionCode = 5
