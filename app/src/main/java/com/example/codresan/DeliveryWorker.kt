@@ -20,7 +20,7 @@ class DeliveryWorker(context: Context, params: WorkerParameters) : Worker(contex
         val settings = store.settings()
         var record = store.records().find { it.id == id } ?: return Result.success()
         if (!settings.active || !settings.consent || !hasSmsPermission(applicationContext) ||
-            record.state in setOf("sent", "duplicate", "expired", "canceled", "needs_confirmation", "choose_target")) return Result.success()
+            record.state in setOf("sent", "duplicate", "expired", "canceled")) return Result.success()
         if (record.otpType != OtpType.REGISTRATION_OTP.name && !settings.typedSmsConsent) return Result.success()
         if (System.currentTimeMillis() >= record.expires || record.code.isEmpty()) {
             store.update(id) { it.copy(code = "", state = "expired", detail = "کد منقضی شده است") }; return Result.success()
@@ -35,24 +35,54 @@ class DeliveryWorker(context: Context, params: WorkerParameters) : Worker(contex
         val result = try {
             if (record.requestId.isNotBlank() && record.nid.isNotBlank()) {
                 // A lost acknowledgement may be retried after the bot consumed the code.
-                // The relay confirms duplicates without delivering the message again.
                 api.deliver(settings, record) { isStopped || !store.settings().active || store.records().none { it.id == id } }
             } else {
-            val targets = api.targets(settings)
-            val decision = OtpCorrelation.decide(record, targets, System.currentTimeMillis())
-            val target = decision.target
-            when {
-                decision.state == "needs_confirmation" -> DeliveryOutcome("needs_confirmation", "نوع عملیات و متقاضی نیاز به تأیید دارد")
-                target == null -> DeliveryOutcome("retry", "متقاضی هنوز در بات منتظر کد نیست", true)
-                record.requestId.isNotBlank() && record.requestId != target.requestId -> DeliveryOutcome("expired", "درخواست قبلی پایان یافته؛ کد جدید لازم است")
-                record.received + 5000 < target.waitingSince -> DeliveryOutcome("expired", "این کد پیش از درخواست جاری دریافت شده است")
-                else -> {
-                    record = record.copy(nid = target.nid, requestId = target.requestId, expires = minOf(record.expires, target.expires),
-                        protocolVersion = if (target.typedProtocol) 2 else 1)
+                val targets = api.targets(settings)
+                
+                // هدایت مستقیم کد به کد ملی متناظر با سیم یا تنها متقاضی منتظر
+                val directTarget = if (record.nid.isNotBlank()) {
+                    targets.firstOrNull { it.nid == record.nid }
+                } else {
+                    val matchingConfigured = targets.filter {
+                        (settings.nid1.isNotBlank() && it.nid == settings.nid1.trim()) ||
+                        (settings.nid2.isNotBlank() && it.nid == settings.nid2.trim())
+                    }
+                    if (matchingConfigured.size == 1) matchingConfigured.first() else null
+                }
+
+                if (directTarget != null) {
+                    record = record.copy(
+                        nid = directTarget.nid,
+                        requestId = directTarget.requestId,
+                        confirmedType = directTarget.otpType,
+                        expires = minOf(record.expires, directTarget.expires),
+                        confirmed = true,
+                        protocolVersion = if (directTarget.typedProtocol) 2 else 1
+                    )
                     store.update(id) { record }
                     api.deliver(settings, record) { isStopped || !store.settings().active || store.records().none { it.id == id } }
+                } else if (record.nid.isNotBlank()) {
+                    DeliveryOutcome("retry", "متقاضی با کد ملی ${record.nid} هنوز در بات منتظر کد نیست", true)
+                } else {
+                    val decision = OtpCorrelation.decide(record, targets, System.currentTimeMillis())
+                    val target = decision.target
+                    when {
+                        decision.state == "needs_confirmation" -> DeliveryOutcome("needs_confirmation", "هر دو متقاضی در انتظار کد هستند؛ متقاضی را تأیید کنید")
+                        target == null -> DeliveryOutcome("retry", "متقاضی هنوز در بات منتظر کد نیست", true)
+                        else -> {
+                            record = record.copy(
+                                nid = target.nid,
+                                requestId = target.requestId,
+                                confirmedType = target.otpType,
+                                expires = minOf(record.expires, target.expires),
+                                confirmed = true,
+                                protocolVersion = if (target.typedProtocol) 2 else 1
+                            )
+                            store.update(id) { record }
+                            api.deliver(settings, record) { isStopped || !store.settings().active || store.records().none { it.id == id } }
+                        }
+                    }
                 }
-            }
             }
         } catch (e: TargetException) { e.outcome }
         if (isStopped) return Result.success()

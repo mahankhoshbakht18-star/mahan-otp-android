@@ -29,27 +29,46 @@ class SmsReceiver : BroadcastReceiver() {
                 if (parsed.type == OtpType.UNLABELED_SIX_DIGIT_CODE && !trusted && senderHash.isBlank()) { store.reject(); return@execute }
                 val sim = resolveSlot(intent)
                 val forwarded = LoanRules.sender(sender) !in LoanRules.senders(settings.allowedSenders)
-                val nid = if (forwarded) "" else when (sim) { 0 -> settings.nid1; 1 -> settings.nid2; else -> "" }
+                
+                // هدایت مستقیم کد به کد ملی سیم‌کارت مربوطه بدون نیاز به انتخاب دستی
+                var nid = when (sim) {
+                    0 -> settings.nid1.trim()
+                    1 -> settings.nid2.trim()
+                    else -> ""
+                }
+                if (nid.isBlank()) {
+                    if (settings.nid1.isNotBlank() && settings.nid2.isBlank()) {
+                        nid = settings.nid1.trim()
+                    } else if (settings.nid1.isBlank() && settings.nid2.isNotBlank()) {
+                        nid = settings.nid2.trim()
+                    }
+                }
+
                 val timestamp = parts.first().timestampMillis
                 if (!LoanRules.fresh(timestamp, System.currentTimeMillis(), settings.ttlSeconds)) {
                     store.reject(); DeliveryWorker.announce(context); return@execute
                 }
                 val id = LoanRules.messageId(body, sender, timestamp, sim)
-                val needsConfirmation = parsed.type == OtpType.UNLABELED_SIX_DIGIT_CODE
+                
+                // قرار دادن مستقیم در صف ارسال خودکار
                 if (store.insert(OtpRecord(id, parsed.code, nid, sim, timestamp, timestamp + settings.ttlSeconds * 1000L,
-                    state = if (needsConfirmation) "needs_confirmation" else "queued",
+                    state = "queued",
                     forwarded = forwarded, senderHash = senderHash, otpType = parsed.type.name, trustedSender = trusted))) {
-                    if (!needsConfirmation) DeliveryWorker.enqueue(context, id)
+                    DeliveryWorker.enqueue(context, id)
                     DeliveryWorker.announce(context)
                 }
             } catch (_: Exception) { /* Fail closed; never log content or bypass secure storage. */ }
             finally { pending.finish() }
         }
     }
+
     private fun resolveSlot(intent: Intent): Int {
         val b = intent.extras ?: return -1
-        for (key in listOf("android.telephony.extra.SLOT_INDEX", "slot", "slot_id", "simId", "phone")) {
-            if (b.containsKey(key)) { val slot = b.getInt(key, -1); if (slot in 0..1) return slot }
+        for (key in listOf("android.telephony.extra.SLOT_INDEX", "slot", "slot_id", "simId", "sim_id", "simnum", "simSlot", "phone", "phone_id")) {
+            if (b.containsKey(key)) {
+                val slot = b.getInt(key, -1)
+                if (slot in 0..1) return slot
+            }
         }
         for (key in listOf(SubscriptionManager.EXTRA_SUBSCRIPTION_INDEX, "subscription", "subscription_id")) {
             if (b.containsKey(key)) {
@@ -60,8 +79,8 @@ class SmsReceiver : BroadcastReceiver() {
                 }
             }
         }
-        // Never guess SIM from which national-ID field is filled.
         return -1
     }
+
     companion object { private val executor = Executors.newSingleThreadExecutor() }
 }
